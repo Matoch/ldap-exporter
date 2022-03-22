@@ -140,7 +140,7 @@ async fn search(
                         if include_attr {
                             result.push_str(
                                 format!(
-                                    "{}{{\"stage\"=\"{}\"}} {}\n",
+                                    "{}{{stage=\"{}\"}} {}\n",
                                     foobar2,
                                     key.to_case(Case::Snake).split("_").last().unwrap(),
                                     bvalue
