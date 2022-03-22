@@ -52,6 +52,16 @@ impl Ldap {
                     result.push_str(foo.as_str())
                 }
 
+                // Each Connection
+                // Metrics
+                // monitorConnectionOpsReceived, monitorConnectionOpsExecuting,
+                // monitorConnectionOpsPending, monitorConnectionOpsCompleted,
+                // monitorConnectionGet, monitorConnectionRead, monitorConnectionWrite
+                // Labels
+                // monitorConnectionPeerAddress, monitorConnectionLocalAddress
+                // monitorConnectionPeerDomain, monitorConnectionListener,
+                // monitorConnectionNumber
+
                 let base_dn = "cn=time,cn=monitor";
                 let scope = Scope::Subtree;
                 let searchphrase = "(cn=uptime)";
@@ -100,7 +110,7 @@ impl Ldap {
                 let end_time = Utc::now();
                 let scrape_time = end_time.timestamp_millis() - start_time.timestamp_millis();
                 result.push_str(
-                    format!("ldap_scrape_duration_milliseconds {}\n", scrape_time).as_str(),
+                    format!("ldap_scrape_duration_seconds {}\n", scrape_time / 1000).as_str(),
                 );
                 return Ok(result);
             }
@@ -129,8 +139,13 @@ async fn search(
                     if let Some(bvalue) = value.pop() {
                         if include_attr {
                             result.push_str(
-                                format!("{}_{} {}\n", foobar2, key.to_case(Case::Snake), bvalue)
-                                    .as_str(),
+                                format!(
+                                    "{} {{stage={}}} {}\n",
+                                    foobar2,
+                                    key.to_case(Case::Snake).split("_").last().unwrap(),
+                                    bvalue
+                                )
+                                .as_str(),
                             );
                         } else {
                             result.push_str(format!("{} {}\n", foobar2, bvalue).as_str());
