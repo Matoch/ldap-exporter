@@ -108,9 +108,14 @@ impl Ldap {
 
                 ldap.unbind().await?;
                 let end_time = Utc::now();
-                let scrape_time = end_time.timestamp_millis() - start_time.timestamp_millis();
+                let scrape_time: f64 =
+                    end_time.timestamp_millis() as f64 - start_time.timestamp_millis() as f64;
                 result.push_str(
-                    format!("ldap_scrape_duration_seconds {}\n", scrape_time / 1000).as_str(),
+                    format!(
+                        "ldap_scrape_duration_seconds {:.5}\n",
+                        scrape_time / 1000 as f64
+                    )
+                    .as_str(),
                 );
                 return Ok(result);
             }
