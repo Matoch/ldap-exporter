@@ -17,18 +17,18 @@ impl Ldap {
                 match env::var("LDAP_BIND_DN") {
                     Ok(bind_dn) => match env::var("LDAP_BIND_PASSWORD") {
                         Ok(bind_pass) => {
-                            let _foo = ldap
+                            let _bind_result = ldap
                                 .simple_bind(bind_dn.as_str(), bind_pass.as_str())
                                 .await?;
                         }
                         _ => (),
                     },
                     _ => {
-                        let _foo = ldap.sasl_external_bind().await?;
+                        let _bind_result = ldap.sasl_external_bind().await?;
                     }
                 }
 
-                let mut result = String::from("");
+                let mut all_metrics = String::from("");
 
                 let base_dn = "cn=statistics,cn=monitor";
                 let scope = Scope::Subtree;
@@ -37,8 +37,8 @@ impl Ldap {
                 let sub_result = search(&mut ldap, base_dn, scope, searchphrase, attributes, false)
                     .await
                     .ok_or(String::from(""));
-                if let Ok(foo) = sub_result {
-                    result.push_str(foo.as_str())
+                if let Ok(metric) = sub_result {
+                    all_metrics.push_str(metric.as_str())
                 }
 
                 let base_dn = "cn=connections,cn=monitor";
@@ -48,8 +48,8 @@ impl Ldap {
                 let sub_result = search(&mut ldap, base_dn, scope, searchphrase, attributes, false)
                     .await
                     .ok_or(String::from(""));
-                if let Ok(foo) = sub_result {
-                    result.push_str(foo.as_str())
+                if let Ok(metric) = sub_result {
+                    all_metrics.push_str(metric.as_str())
                 }
 
                 // Each Connection
@@ -69,8 +69,8 @@ impl Ldap {
                 let sub_result = search(&mut ldap, base_dn, scope, searchphrase, attributes, false)
                     .await
                     .ok_or(String::from(""));
-                if let Ok(foo) = sub_result {
-                    result.push_str(foo.as_str())
+                if let Ok(metric) = sub_result {
+                    all_metrics.push_str(metric.as_str())
                 }
 
                 let base_dn = "cn=waiters,cn=monitor";
@@ -80,8 +80,8 @@ impl Ldap {
                 let sub_result = search(&mut ldap, base_dn, scope, searchphrase, attributes, false)
                     .await
                     .ok_or(String::from(""));
-                if let Ok(foo) = sub_result {
-                    result.push_str(foo.as_str())
+                if let Ok(metric) = sub_result {
+                    all_metrics.push_str(metric.as_str())
                 }
 
                 let base_dn = "cn=threads,cn=monitor";
@@ -91,8 +91,8 @@ impl Ldap {
                 let sub_result = search(&mut ldap, base_dn, scope, searchphrase, attributes, false)
                     .await
                     .ok_or(String::from(""));
-                if let Ok(foo) = sub_result {
-                    result.push_str(foo.as_str())
+                if let Ok(metric) = sub_result {
+                    all_metrics.push_str(metric.as_str())
                 }
 
                 let base_dn = "cn=operations,cn=monitor";
@@ -102,22 +102,22 @@ impl Ldap {
                 let sub_result = search(&mut ldap, base_dn, scope, searchphrase, attributes, true)
                     .await
                     .ok_or(String::from(""));
-                if let Ok(foo) = sub_result {
-                    result.push_str(foo.as_str())
+                if let Ok(metric) = sub_result {
+                    all_metrics.push_str(metric.as_str())
                 }
 
                 ldap.unbind().await?;
                 let end_time = Utc::now();
                 let scrape_time: f64 =
                     end_time.timestamp_millis() as f64 - start_time.timestamp_millis() as f64;
-                result.push_str(
+                all_metrics.push_str(
                     format!(
                         "ldap_scrape_duration_seconds {:.5}\n",
                         scrape_time / 1000 as f64
                     )
                     .as_str(),
                 );
-                return Ok(result);
+                return Ok(all_metrics);
             }
             _ => (),
         }
@@ -138,22 +138,22 @@ async fn search(
         Ok(search_result) => {
             let rs = search_result.0;
             for entry in rs {
-                let bar: SearchEntry = SearchEntry::construct(entry);
-                let foobar2 = convert_dn(bar.dn);
-                for (key, mut value) in bar.attrs {
-                    if let Some(bvalue) = value.pop() {
+                let parsed_entry: SearchEntry = SearchEntry::construct(entry);
+                let metric_name = convert_dn(parsed_entry.dn);
+                for (key, mut value) in parsed_entry.attrs {
+                    if let Some(metric_value) = value.pop() {
                         if include_attr {
                             result.push_str(
                                 format!(
                                     "{}{{stage=\"{}\"}} {}\n",
-                                    foobar2,
+                                    metric_name,
                                     key.to_case(Case::Snake).split("_").last().unwrap(),
-                                    bvalue
+                                    metric_value
                                 )
                                 .as_str(),
                             );
                         } else {
-                            result.push_str(format!("{} {}\n", foobar2, bvalue).as_str());
+                            result.push_str(format!("{} {}\n", metric_name, metric_value).as_str());
                         }
                     }
                 }
@@ -166,13 +166,13 @@ async fn search(
 }
 
 pub fn convert_dn(dn: String) -> String {
-    let mut foobar: VecDeque<String> = dn
+    let mut split_dn: VecDeque<String> = dn
         .split(",")
         .map(|s| s.replace("cn=", "").replace(" ", "_"))
         .collect();
-    let mut foobar2 = String::from("ldap");
-    while let Some(thing) = foobar.pop_back() {
-        foobar2.push_str(format!("_{}", thing.to_lowercase()).as_str());
+    let mut metric_prefix = String::from("ldap");
+    while let Some(thing) = split_dn.pop_back() {
+        metric_prefix.push_str(format!("_{}", thing.to_lowercase()).as_str());
     }
-    foobar2
+    metric_prefix
 }
