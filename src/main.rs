@@ -1,11 +1,14 @@
 mod ldap;
 
+use log::info;
 use std::env;
 use tokio;
 use warp::Filter;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+    info!("Starting LDAP Exporter");
     match env::var("EXPORTER_PORT") {
         Ok(exporter_port_string) => {
             let exporter_port = exporter_port_string.parse::<u16>().unwrap();
@@ -20,4 +23,5 @@ async fn main() {
         }
         _ => println!("You must supply a port for the exporter to run on. EXPORTER_PORT=??"),
     }
+    info!("Quitting LDAP Exporter");
 }

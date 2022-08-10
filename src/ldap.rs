@@ -2,8 +2,10 @@ use chrono::prelude::*;
 use convert_case::{Case, Casing};
 use ldap3::result::Result;
 use ldap3::{LdapConnAsync, Scope, SearchEntry};
+use log::{debug, error, info, trace};
 use std::collections::VecDeque;
 use std::env;
+use std::time::Duration;
 
 pub struct Ldap;
 
@@ -11,23 +13,56 @@ impl Ldap {
     pub async fn go() -> Result<String> {
         match env::var("LDAP_URI") {
             Ok(ldap_uri) => {
+                trace!("LDAP URI set to {}", ldap_uri);
                 let start_time = Utc::now();
                 let (conn, mut ldap) = LdapConnAsync::new(ldap_uri.as_str()).await?;
+                let duration = Duration::new(5, 0);
                 ldap3::drive!(conn);
                 match env::var("LDAP_BIND_DN") {
-                    Ok(bind_dn) => match env::var("LDAP_BIND_PASSWORD") {
-                        Ok(bind_pass) => {
-                            let _bind_result = ldap
-                                .simple_bind(bind_dn.as_str(), bind_pass.as_str())
-                                .await?;
+                    Ok(bind_dn) => {
+                        trace!("Bind DN set to {}", bind_dn);
+                        match env::var("LDAP_BIND_PASSWORD") {
+                            Ok(bind_pass) => {
+                                trace!("Bind password is set");
+                                debug!("Performing Bind");
+                                let bind_result = ldap
+                                    .with_timeout(duration)
+                                    .simple_bind(bind_dn.as_str(), bind_pass.as_str())
+                                    .await?;
+                                match bind_result.success() {
+                                    Ok(_) => {
+                                        info!("Bind was Successful")
+                                    }
+                                    Err(bind_result) => {
+                                        trace!("{:?}", bind_result);
+                                        error!("Bind Failure");
+                                        return Err(bind_result);
+                                    }
+                                }
+                                debug!("Bind Complete");
+                            }
+                            _ => {
+                                error!("Bind DN is set but Password is missing.");
+                                ()
+                            }
                         }
-                        _ => (),
-                    },
+                    }
                     _ => {
-                        let _bind_result = ldap.sasl_external_bind().await?;
+                        debug!("Performing SASL Bind");
+                        let bind_result = ldap.with_timeout(duration).sasl_external_bind().await?;
+                        match bind_result.success() {
+                            Ok(_) => {
+                                info!("SASL Bind was Successful")
+                            }
+                            Err(bind_result) => {
+                                trace!("{:?}", bind_result);
+                                error!("SASL Bind Failure");
+                                return Err(bind_result);
+                            }
+                        }
+                        debug!("SASL Bind complete");
                     }
                 }
-
                 let mut all_metrics = String::from("");
 
                 let base_dn = "cn=statistics,cn=monitor";
@@ -117,11 +152,16 @@ impl Ldap {
                     )
                     .as_str(),
                 );
+                info!("Returning a Metric");
                 return Ok(all_metrics);
             }
-            _ => (),
+            _ => {
+                error!("Foo");
+                ()
+            }
         }
-        return Ok(String::from("Nope"));
+        error!("LDAP_URI must be set!");
+        return Ok(String::from("Unable to retrieve Metric"));
     }
 }
 
@@ -134,7 +174,12 @@ async fn search(
     include_attr: bool,
 ) -> Option<String> {
     let mut result = String::from("");
-    match ldap.search(base_dn, scope, search, attributes).await {
+    let duration = Duration::new(5, 0);
+    match ldap
+        .with_timeout(duration)
+        .search(base_dn, scope, search, attributes)
+        .await
+    {
         Ok(search_result) => {
             let rs = search_result.0;
             for entry in rs {
@@ -143,17 +188,18 @@ async fn search(
                 for (key, mut value) in parsed_entry.attrs {
                     if let Some(metric_value) = value.pop() {
                         if include_attr {
-                            result.push_str(
-                                format!(
-                                    "{}{{stage=\"{}\"}} {}\n",
-                                    metric_name,
-                                    key.to_case(Case::Snake).split("_").last().unwrap(),
-                                    metric_value
-                                )
-                                .as_str(),
+                            let individual_metric = format!(
+                                "{}{{stage=\"{}\"}} {}\n",
+                                metric_name,
+                                key.to_case(Case::Snake).split("_").last().unwrap(),
+                                metric_value
                             );
+                            trace!("Metric: {}", individual_metric);
+                            result.push_str(individual_metric.as_str());
                         } else {
-                            result.push_str(format!("{} {}\n", metric_name, metric_value).as_str());
+                            let individual_metric = format!("{} {}\n", metric_name, metric_value);
+                            trace!("Metric: {}", individual_metric);
+                            result.push_str(individual_metric.as_str());
                         }
                     }
                 }
@@ -166,6 +212,7 @@ async fn search(
 }
 
 pub fn convert_dn(dn: String) -> String {
+    trace!("DN to be converted: {}", dn);
     let mut split_dn: VecDeque<String> = dn
         .split(",")
         .map(|s| s.replace("cn=", "").replace(" ", "_"))
@@ -174,5 +221,6 @@ pub fn convert_dn(dn: String) -> String {
     while let Some(thing) = split_dn.pop_back() {
         metric_prefix.push_str(format!("_{}", thing.to_lowercase()).as_str());
     }
+    trace!("Converted DN: {}", metric_prefix);
     metric_prefix
 }
