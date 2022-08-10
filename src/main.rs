@@ -1,6 +1,6 @@
 mod ldap;
 
-use log::info;
+use log::{error,info};
 use std::env;
 use tokio;
 use warp::Filter;
@@ -15,7 +15,10 @@ async fn main() {
             let routes = warp::path("metrics").and_then(|| async move {
                 let body = match ldap::Ldap::go().await {
                     Ok(body) => body,
-                    Err(_err) => return Err(warp::reject::not_found()),
+                    Err(err) => {
+                        error!("Error returned to warp. {:?}", err);
+                        return Err(warp::reject::not_found())
+                    }
                 };
                 Ok(format!("{}", body.as_str()))
             });
