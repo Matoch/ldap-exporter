@@ -1,7 +1,7 @@
 use chrono::prelude::*;
 use convert_case::{Case, Casing};
 use ldap3::result::Result;
-use ldap3::{LdapConnAsync, Scope, SearchEntry};
+use ldap3::{LdapConnAsync, Scope, SearchEntry, LdapConnSettings };
 use log::{debug, error, info, trace};
 use std::collections::VecDeque;
 use std::env;
@@ -15,8 +15,11 @@ impl Ldap {
             Ok(ldap_uri) => {
                 trace!("LDAP URI set to {}", ldap_uri);
                 let start_time = Utc::now();
-                let (conn, mut ldap) = LdapConnAsync::new(ldap_uri.as_str()).await?;
-                let duration = Duration::new(5, 0);
+                let mut settings = LdapConnSettings::new();
+                let duration = Duration::new(2, 0);
+                settings = settings.set_conn_timeout(duration);
+                let (conn, mut ldap) = LdapConnAsync::with_settings(settings, ldap_uri.as_str()).await?;
+                trace!("Opened Connection");
                 ldap3::drive!(conn);
                 match env::var("LDAP_BIND_DN") {
                     Ok(bind_dn) => {
